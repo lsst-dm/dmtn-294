@@ -27,7 +27,7 @@ In addition, we'll need to store considerable structured metadata, including a W
 
 We will assume throughout this note that we're writing FITS files: regardless of any other format Rubin might support, we have to support FITS as well, so it's just more work to do anything else.
 
-These files will be one per "patch", which we assume to be an approximately 4k x 4k image, divided into cells with an inner region that is approximately 150x150 and 50 pixel padding on all sides.
+These files will be one per "patch", which we assume to be an approximately 4k × 4k image, divided into cells with an inner region that is approximately 150×150 and 50 pixel padding on all sides.
 We will only consider layouts that save the entire coadd, including the outer cell regions.
 
 We need these files to be readable over both POSIX filesystems and S3 and webdav object stores, and we need to be able to read subimages efficiently over all of these storage systems (i.e. we cannot afford to read the entire file just to read a subimage).
@@ -100,7 +100,7 @@ Another simple file layout is to put each image plane for each cell in a complet
 This is entirely compatible with FITS tile compression (though we'd almost certainly compress the entire HDU as one tile) and our goals for using FITS WCS.
 Stitching images from different HDUs into a coherent whole is probably a bit more likely for a third-party FITS viewer to support than images from different binary tables, but a flat list of HDUs for all cells and image planes provides a lot less organizational structure than a binary table (especially a single binary table) for third-party tools to interpret.
 
-Each HDU comes with an extra 3-9 KB of overhead (1-2 header blocks, and padding out the full HDU size to a multiple of 2880) that cannot be compressed, which is not ideal, but probably not intolerable unless we get unexpectedly good compression ratios or shrink the cell size: an uncompressed 250x250 single-precision floating point image is 250KB, so those overheads should be at most 4% or so.
+Each HDU comes with an extra 3-9 KB of overhead (1-2 header blocks, and padding out the full HDU size to a multiple of 2880) that cannot be compressed, which is not ideal, but probably not intolerable unless we get unexpectedly good compression ratios or shrink the cell size: an uncompressed 250×250 single-precision floating point image is 250KB, so those overheads should be at most 4% or so.
 The overheads would be significant for the PSF images, which we expect to be 25-40 pixels on a side (2.5-6 KB uncompressed).
 
 Subimage reads would be similarly non-ideal but perhaps tolerable.
@@ -113,12 +113,23 @@ As in the binary table case, it's an open question whether we could get sufficie
 Data Cubes
 ----------
 
-TODO
+In this layout, we'd have one 3-d or 4-d image extension HDU for each plane, with each cell's image a 2-d slice of that higher-dimensional array, and the other dimensions corresponding to a 1-d or 2-d index of that cell in its grid.
+
+This avoids the problem with per-HDU overheads, and it makes an address table much less important, as there are many fewer HDUs.
+It also allows compression tiles that comprise multiple cells.
+
+It does not allow us to represent the on-sky locations of cells using FITS WCS, however, and this is probably enough to rule it out.
+
+This approach is neutral w.r.t. the problem of compressed subimage reads against stores: any solution that worked for a regular, non-cell image would work for this one.
 
 Exploded Images
 ---------------
 
-TODO
+This approach is similar to the data cube layout, with one HDU for each image plane, but instead of using additional dimensions to represent the grid, we just stitch all cells into a single larger 2-d image.
+This doesn't put the cells onto a consistent meaningful coordinate system, however, because we'd be stitching the outer regions together, not the inner regions, and that means all of the logical pixels in the overlap regions appear more than once (albeit with subtly different PSFs, noise, etc, due to different input epochs, in most cases).
+
+That makes the full image *somewhat* interpretable by humans, though far from ideal - it's a bit similar to the common approach of displaying "untrimmed" raw images with the overscan regions of amplifiers in between the data sections.
+This is a slight advantage over the data cube layout, but it seems to be the only one: it suffers from the same incompatibility with FITS WCS, and is similarly neutral for the compressed subimage reads problem.
 
 Stitched Images
 ---------------
