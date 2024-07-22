@@ -27,7 +27,7 @@ In addition, we'll need to store considerable structured metadata, including a W
 
 We will assume throughout this note that we're writing FITS files: regardless of any other format Rubin might support, we have to support FITS as well, so it's just more work to do anything else.
 
-These files will be one per "patch", which we assume to be an approximately 4k × 4k image, divided into cells with an inner region that is approximately 150×150 and 50 pixel padding on all sides.
+These files will be one per "patch", which we assume to be an approximately 4k × 4k image, divided into cells with an inner region that is approximately 150×150 with 50 pixel padding on all sides.
 We will only consider layouts that save the entire coadd, including the outer cell regions.
 
 We need these files to be readable over both POSIX filesystems and S3 and webdav object stores, and we need to be able to read subimages efficiently over all of these storage systems (i.e. we cannot afford to read the entire file just to read a subimage).
@@ -56,8 +56,8 @@ Combined with our need to subimage reads over object stores, this already puts u
 As a result, I expect us to need to write some low-level code of our own to do subimage reads over object stores, though this is not specific to cell-based coadds: we need this for all of our image data products.
 Whether to contribute more general code upstream (probably to Astropy) or focus only on reading the specific files we write ourselves is an important open question; the general solution would be very useful the community, but its scope is unquestionably larger.
 
-Finally, the WCS of any single cell (or the inner-cell stitched image) will be simple and can be exactly represented in FITS headers (unlike the WCSs of our single-epoch images).
-An additional FITS WCS could be used to describe the position of a single-cell image within a larger grid.
+Finally, the WCS of any single cell (or the inner-cell stitched image; they differ only in an integer offset) will be simple and can be exactly represented in FITS headers (unlike the WCSs of our single-epoch images).
+An additional FITS WCS could be used to describe the position of a single-cell image within a larger grid (this is just an integer offset).
 It is highly desirable that any images we store in our FITS files have both to allow third-party FITS readers to fully interpret them.
 
 Image Data Layouts
@@ -100,7 +100,7 @@ Another simple file layout is to put each image plane for each cell in a complet
 This is entirely compatible with FITS tile compression (though we'd almost certainly compress the entire HDU as one tile) and our goals for using FITS WCS.
 Stitching images from different HDUs into a coherent whole is probably a bit more likely for a third-party FITS viewer to support than images from different binary tables, but a flat list of HDUs for all cells and image planes provides a lot less organizational structure than a binary table (especially a single binary table) for third-party tools to interpret.
 
-Each HDU comes with an extra 3-9 KB of overhead (1-2 header blocks, and padding out the full HDU size to a multiple of 2880) that cannot be compressed, which is not ideal, but probably not intolerable unless we get unexpectedly good compression ratios or shrink the cell size: an uncompressed 250×250 single-precision floating point image is 250KB, so those overheads should be at most 4% or so.
+Each HDU comes with an extra 3-9 KB of overhead (1-2 header blocks, and padding out the full HDU size to a multiple of 2880 bytes) that cannot be compressed, which is not ideal, but probably not intolerable unless we get unexpectedly good compression ratios or shrink the cell size: an uncompressed 250×250 single-precision floating point image is 250KB, so those overheads should be at most 4% or so.
 The overheads would be significant for the PSF images, which we expect to be 25-40 pixels on a side (2.5-6 KB uncompressed).
 
 Subimage reads would be similarly non-ideal but perhaps tolerable.
@@ -120,7 +120,7 @@ It also allows compression tiles that comprise multiple cells.
 
 It does not allow us to represent the on-sky locations of cells using FITS WCS, however, and this is probably enough to rule it out.
 
-This approach is neutral w.r.t. the problem of compressed subimage reads against stores: any solution that worked for a regular, non-cell image would work for this one.
+This approach is neutral w.r.t. the problem of compressed subimage reads against object stores: any solution that worked for a regular, non-cell image would work for this one.
 
 Exploded Images
 ---------------
@@ -139,7 +139,7 @@ This suggests that we might want to store that stitched inner-cell image for eac
 
 For the inner-cell image, this is ideal: FITS WCS can be used exactly the way it was intended, and third-party FITS viewers will be completely usable without any extra effort.
 
-For the overlap regions, we'd end up with a repeat of our original problem, but with lower stakes: for each original cell, we'd have 4 overlap-region images (top, bottom, left, right) that need to be packed into a binary table, data cube, or stitched image of their own (which this stitching being analogous to the exploded coadd case, since there'd be no meaningful overall coordinate system).
+For the overlap regions, we'd end up with a repeat of our original problem, but with lower stakes: for each original cell, we'd have 4 overlap-region images (top, bottom, left, right) that need to be packed into a binary table, data cube, or stitched image of their own (with this stitching being analogous to the exploded coadd case, since there'd be no meaningful overall coordinate system).
 
 .. figure:: /_static/cell-stitching.png
    :name: cell-stitching
@@ -150,16 +150,16 @@ For the overlap regions, we'd end up with a repeat of our original problem, but 
    Right: a stitched inner-cell image and packings of the overlap regions.
    Each color represents a different FITS HDU; the green inner region would be a single 2-d image, while the blue and purple overlap regions could 2-d images or 3- or 4-d data cubes.
 
-Assuming we don't care about FITS WCS support for the overlap regions, the main complication here is complexity in two places:
+Assuming we don't care about FITS WCS support for the overlap regions, the main problem with this approach is complexity in two places:
 
 - When writing, we'd need to quantize the outer cell image first, and then slice the image into its inner-cell and overlap-region sections, and only then compress the quantized values.
-  This isn't something third-party FITS compress-while-writing libraries can do, but it if we're doing our own quantization anyway, it'd be straightforward to include.
-  It would not be compatible with storing the overlap regions in a binary table, but we would have the freedom to compress more than one cell at a time (and even compress more cells at a time in the overlap regions than in the inner regions).
+  This isn't something third-party FITS compress-while-writing libraries can do, but if we're doing our own quantization anyway, it'd be straightforward to include.
+  Compression would not be compatible with storing the overlap regions in a binary table, but we would have the freedom to compress more than one cell at a time (and even compress more cells at a time in the overlap regions than in the inner regions).
 
 - Access to the outer cells on read would require more complex code and a few more seeks: first read the inner region, then read the four overlap regions (though these can almost certainly be read in pairs), and then put them all together.
   This is not something we'd expect third-party general-purpose readers to ever do, but it's not a terribly complicated specification or a huge burden for, say, someone who wanted to write a Rubin-specific reader in a language other than Python.
 
-This option is also neutral to the problem of compressed subimage reads against object store.
+This option is also neutral to the problem of compressed subimage reads against object stores.
 
 Hybrid Options
 --------------
@@ -167,7 +167,7 @@ Hybrid Options
 We can in theory use a different approach for each image plane, though for the most part the arguments are the same for all image planes.
 The PSF images are the big exception: they are already intrinsically in their own coordinate system that doesn't have a meaningful WCS, and they are unlikely to ever be lossy compressed (I actually don't have any intuition for whether they'd have good lossless compression ratios).
 
-This makes data cube or exploded storage of PSFs quite attractive (binary table too, at least if if we determine that we don't need to compress them at all), even if other image planes are stored in other ways.
+This makes data cube or exploded storage of PSFs quite attractive (binary tables too, at least if if we determine that we don't need to compress them at all), even if other image planes are stored in other ways.
 
 Metadata Layouts
 ================
