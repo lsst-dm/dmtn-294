@@ -134,13 +134,40 @@ This is a slight advantage over the data cube layout, but it seems to be the onl
 Stitched Images
 ---------------
 
-TODO
+We expect most accesses to our coadd files to be uninterested in the redundant overlap pixel values - instead, most science users will be interested in stitching together the inner cells to form a mostly-seamless patch-level image.
+This suggests that we might want to store that stitched inner-cell image for each plane directly as a single HDU, and shunt the overlap pixel values to a different HDU.
+
+For the inner-cell image, this is ideal: FITS WCS can be used exactly the way it was intended, and third-party FITS viewers will be completely usable without any extra effort.
+
+For the overlap regions, we'd end up with a repeat of our original problem, but with lower stakes: for each original cell, we'd have 4 overlap-region images (top, bottom, left, right) that need to be packed into a binary table, data cube, or stitched image of their own (which this stitching being analogous to the exploded coadd case, since there'd be no meaningful overall coordinate system).
+
+.. figure:: /_static/cell-stitching.png
+   :name: cell-stitching
+   :target: ../_images/cell-stitching.png
+
+   Left: an "exploded" image with inner cell regions (squares) and a subdivision of the overlap regions (T, B, L, R) labeled.
+
+   Right: a stitched inner-cell image and packings of the overlap regions.
+   Each color represents a different FITS HDU; the green inner region would be a single 2-d image, while the blue and purple overlap regions could 2-d images or 3- or 4-d data cubes.
+
+Assuming we don't care about FITS WCS support for the overlap regions, the main complication here is complexity in two places:
+
+- When writing, we'd need to quantize the outer cell image first, and then slice the image into its inner-cell and overlap-region sections, and only then compress the quantized values.
+  This isn't something third-party FITS compress-while-writing libraries can do, but it if we're doing our own quantization anyway, it'd be straightforward to include.
+  It would not be compatible with storing the overlap regions in a binary table, but we would have the freedom to compress more than one cell at a time (and even compress more cells at a time in the overlap regions than in the inner regions).
+
+- Access to the outer cells on read would require more complex code and a few more seeks: first read the inner region, then read the four overlap regions (though these can almost certainly be read in pairs), and then put them all together.
+  This is not something we'd expect third-party general-purpose readers to ever do, but it's not a terribly complicated specification or a huge burden for, say, someone who wanted to write a Rubin-specific reader in a language other than Python.
+
+This option is also neutral to the problem of compressed subimage reads against object store.
 
 Hybrid Options
 --------------
 
-TODO
+We can in theory use a different approach for each image plane, though for the most part the arguments are the same for all image planes.
+The PSF images are the big exception: they are already intrinsically in their own coordinate system that doesn't have a meaningful WCS, and they are unlikely to ever be lossy compressed (I actually don't have any intuition for whether they'd have good lossless compression ratios).
 
+This makes data cube or exploded storage of PSFs quite attractive (binary table too, at least if if we determine that we don't need to compress them at all), even if other image planes are stored in other ways.
 
 Metadata Layouts
 ================
