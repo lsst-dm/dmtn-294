@@ -185,6 +185,3 @@ A binary table with per-cell rows is a natural fit for the fixed-schema per-cell
 But if we're embedding a JSON document in the FITS file anyway, it might make more sense to store this information in JSON as well; this will let us share code, documentation, and serialization for more complex objects with other Rubin image data products, and that includes sharing the machinery for managing schema changes schema documentation.
 
 The tables of observations that contribute to each cell is also a natural binary table, but not one with per-cell rows (it's more natural as a cell-visit-detector join table), but once again embedded JSON is an equally viable option.
-
-
-See the `Documenteer documentation <https://documenteer.lsst.io/technotes/index.html>`_ for tips on how to write and configure your new technote.
