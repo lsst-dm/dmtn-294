@@ -5,7 +5,7 @@ File Formats and Layouts for Cell-based Coadds
 .. abstract::
 
    Rubin's deep coadds will be built on a grid of small cells, in which each cell has an approximately constant PSF.
-   Cells will have "inner regions" that can be stitched together to form the full coadd, but they will also have outer regions that overlap (neighboring cells will have their own versions of some of the same pixels), in order to allow convolutions and other operations that require padding to be performed rigorously cell by cell.
+   Cells will have "inner regions" that can be stitched together to form the full (patch-sized) coadd, but they will also have outer regions that overlap (neighboring cells will have their own versions of some of the same pixels), in order to allow convolutions and other operations that require padding to be performed rigorously cell by cell.
    This creates a problem for how to store a coadd in an on-disk FITS file: we want a layout that can be easily interpreted by third-party readers, but we also need to support compression and efficient subimage reads of at least the inner cell region.
    This technical note will summarize various possibilities and their advantages and disadvantages.
 
@@ -182,6 +182,6 @@ While some global information will go into FITS headers (certainly the WCS and s
 A single-row binary table is another option, but we will likely instead adopt the approach recently proposed for other Rubin image data products on RFC-1030: embedding a JSON document as a byte array in a FITS extension HDU.
 
 A binary table with per-cell rows is a natural fit for the fixed-schema per-cell information, especially if the image data layout already involves a binary table with per-cell rows.
-But if we're embedding a JSON document in the FITS file anyway, it might make more sense to store this information in JSON as well; this will let us share code, documentation, and serialization for more complex objects with other Rubin image data products, and that includes sharing the machinery for managing schema changes schema documentation.
+But if we're embedding a JSON document in the FITS file anyway, it might make more sense to store this information in JSON as well; this will let us share code, documentation, and serialization for more complex objects with other Rubin image data products, and that includes sharing the machinery for managing schema changes and schema documentation.
 
 The tables of observations that contribute to each cell is also a natural binary table, but not one with per-cell rows (it's more natural as a cell-visit-detector join table), but once again embedded JSON is an equally viable option.
