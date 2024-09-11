@@ -20,7 +20,7 @@ Rubin's cell-based coadds will need to store five or more image planes that shar
 - a floating point "interpolation fraction" image that records fractional missing data in each pixel;
 - at least one floating point Monte Carlo noise realization.
 
-It will need to store at least one PSF model image for each cell; these will be smaller than the other per-cell images but the grid will have the same shape.
+We will also need to store at least one PSF model image for each cell; these will be smaller than the other per-cell images but the grid will have the same shape.
 To account for chromatic PSF effects we may also store images that correspond to the derivatives of the PSF with respect to some proxy for object SED, in at least some bands.
 
 In addition, we'll need to store considerable structured metadata, including a WCS, information about the grid structure, coadded aperture corrections and wavelength-dependent throughput, the visit and detector IDs of the epochs that contributed to each cell, and additional information about the pixel uncertainty (some measure of typical covariance, and an approximately constant variance that either averages or does not include photon noise from sources).
@@ -34,8 +34,9 @@ We need these files to be readable over both POSIX filesystems and S3 and webdav
 Writing to just POSIX filesystems is adequate, as there's no problem with writing to local temporary storage and then uploading separately in our pipeline architecture.
 We do not expect to need the ability to extend existing files.
 
-We expect to compress all image planes with at least lossless compression, and would like to have the capability to perform lossy compression on some planes as well.
-If we do lossy compression, we would quite likely want to do our own quantization (our `afw` library already has code for this that we prefer over CFITSIO's).
+We expect to compress all image planes with at least lossless compression, and need like to have the capability to perform lossy compression on some planes as well.
+For lossy compression, we would quite likely want to do our own quantization (our `afw` library already has code for this that we prefer over CFITSIO's),
+and would want to use subtractive dithering (adding and subtracting deterministic pseudorandom numbers to avoid quantization biases).
 DESC has expressed an interest in applying lossy compression to any coadd files they transfer to NERSC, if we have not done so already.
 
 Constraints from FITS
@@ -44,19 +45,20 @@ Constraints from FITS
 Because we need to be able to read subimages efficiently, file-level compression is not an option: our only options are FITS image "tile compression" and perhaps lesser-known FITS 4.0's binary table compression.
 Combined with our need to subimage reads over object stores, this already puts us beyond what third-party FITS libraries can do:
 
-- CFITSIO can do image tile compression, including efficient subimage reads that take advantage of the tile structure, but only on POSIX filesystems (or blocks of contiguous memory that correspond to the on-disk layout).
+- CFITSIO can do image tile compression and binary table compression, including efficient subimage reads that take advantage of the tile structure, but only on POSIX filesystems (or blocks of contiguous memory that correspond to the on-disk layout).
   It can also do subset reads of FITS binary tables, again only on POSIX filesystems.
+  CFITSIO can only permits customization of the quantization used in image tile compression via undocumented internal interfaces (which is what we use in ``afw``).
   This imposes the same limitation on its Python bindings in the ``fitsio`` package.
 
 - Astropy can do image tile compression with efficient subimage reads on POSIX filesystems, and it can do uncompressed reads (including efficient subimage reads) against both POSIX and object stores via `fsspec`, but it delegates to vendored CFITSIO code for its tile compression code and does not support the combination of these two.
   Astropy cannot do subset reads of FITS binary tables, even on POSIX filesystems.
-
-- I am not aware of any library that can do FITS binary table compression at all.
+  Astropy also does not provide a way to customize the quantization during lossy compression.
 
 As a result, I expect us to need to write some low-level code of our own to do subimage reads over object stores, though this is not specific to cell-based coadds: we need this for all of our image data products.
+We also may need new low-level code to write tile-compressed images with custom quantization, since the code we have in ``afw`` for this is not general enough to work with all of the file layouts described here.
 Whether to contribute more general code upstream (probably to Astropy) or focus only on reading the specific files we write ourselves is an important open question; the general solution would be very useful the community, but its scope is unquestionably larger.
 
-Finally, the WCS of any single cell (or the inner-cell stitched image; they differ only in an integer offset) will be simple and can be exactly represented in FITS headers (unlike the WCSs of our single-epoch images).
+Finally, the WCS of any single cell (or the inner-cell stitched image; they differ only by an integer offset) will be simple and can be exactly represented in FITS headers (unlike the WCSs of our single-epoch images).
 An additional FITS WCS could be used to describe the position of a single-cell image within a larger grid (this is just an integer offset).
 It is highly desirable that any images we store in our FITS files have both to allow third-party FITS readers to fully interpret them.
 
@@ -80,18 +82,12 @@ PSF images fit naturally in this layout, as there's nothing wrong with having so
 There might be some confusion with a Green Bank convention WCS, though, if we go with a single table with different columns for different image planes as well as the PSF; there's no way to mark which image columns the WCS applies to.
 
 The main problem with binary table layouts is compression support.
-The latest FITS standard does include (in section 10.3) a discussion of "tiled table compression", which seems like it'd be sufficient, as long as compressing one cell at a time is enough to get a good compression ratio (this is unclear).
-Unlike image tile compression, binary table tile compression doesn't support lossy compression algorithms or dithered quantization, but it would still be possible to do our own non-dithered quantization and use ``BZERO`` and ``BSCALE`` to record the transformation from integer back to floating-point.
-The bigger problem is that there does not appear to be any implementations of it: there is no mention of it in either the CFITSIO or Astropy documentation (and even if an implementation does exist in, say, the Java ecosystem, we wouldn't be in a position to use it).
-While we've already discussed the fact that we'll probably need to implement some low-level FITS image tile compression code in order to do decompressed subimage reads with object stores anymore, the binary table compression situation is much more problematic:
+The latest FITS standard does include (in section 10.3) a discussion of "tiled table compression", which is limited to lossless compression algorithms, though the standard endorses the idea of extending this in the future.
+It might still be possible to do our own non-dithered quantization and use ``BZERO`` and ``BSCALE`` to record the transformation from integer back to floating-point, and external FITS readers that understand both the Green Bank convention and tiled table compression could reasonably be expected to interpret this as intended.
+But this does not provide a way to do subtractive dithering (which we consider necessary for lossy compression) or a way to quantize more than one floating-point image-like column in a single table, unless they had the same quantization parameters (and our images and variances, at least, would not).
 
-- tables are much more complicated than images;
-- we would have to implement writes ourselves, not just reads;
-- we would not have a reference implementation we could use for testing;
-- if the standard has not seen real use, we stand a good chance of discovering uncovered edge cases or other defects;
-- third-party FITS readers would definitely not be able to read our files, at least not without significant work.
-
-In fact, even without compression, the binary table layout would require writing our code just to solve the problem of subimage reads over object stores, since Astropy cannot do efficient table subset reads and CFITSIO cannot do object store reads.
+Adopting a binary table layout would thus effectively mean any lossy-compressed columns we write would be unavailable to third-party FITS readers until and unless we could standardize some approach to quantization and get it implemented in other libraries.
+This seems doable given the positive language in the standard about that possibility, but not on a short timescale.
 
 Per-HDU Cells
 -------------
@@ -107,8 +103,6 @@ Subimage reads would be similarly non-ideal but perhaps tolerable.
 Because each HDU is so small, it'd be plenty efficient to read full HDUs, but only those for the cells that overlap the region of interest.
 Seeking to the right HDUs (or requesting the appropriate byte ranges, in the object store case) is easily solved by putting a table of byte offsets in the primary HDU header, though this isn't something third-party FITS readers could leverage.
 That would make for a simple solution to the problem of doing subimage reads over object stores (including compression): we could use the address table to read the HDUs we are interested in in their entirety into a client-side memory location that looks like a full in-memory FITS file holding just those HDUs, and then delegate to CFITSIO's "memory file" interfaces to let it do the decompression.
-
-As in the binary table case, it's an open question whether we could get sufficiently good compression ratios if we are limited to compressing one cell at a time.
 
 Data Cubes
 ----------
@@ -167,7 +161,7 @@ Hybrid Options
 We can in theory use a different approach for each image plane, though for the most part the arguments are the same for all image planes.
 The PSF images are the big exception: they are already intrinsically in their own coordinate system that doesn't have a meaningful WCS, and they are unlikely to ever be lossy compressed (I actually don't have any intuition for whether they'd have good lossless compression ratios).
 
-This makes data cube or exploded storage of PSFs quite attractive (binary tables too, at least if if we determine that we don't need to compress them at all), even if other image planes are stored in other ways.
+This makes binary table, exploded image, or data cube storage of PSFs quite attractive, even if other image planes are stored in other ways.
 
 Metadata Layouts
 ================
