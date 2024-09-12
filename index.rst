@@ -96,7 +96,8 @@ Per-HDU Cells
 
 Another simple file layout is to put each image plane for each cell in a completely separate FITS image HDU.
 This is entirely compatible with FITS tile compression (though we'd almost certainly compress the entire HDU as one tile) and our goals for using FITS WCS.
-Stitching images from different HDUs into a coherent whole is probably a bit more likely for a third-party FITS viewer to support than images from different binary tables, but a flat list of HDUs for all cells and image planes provides a lot less organizational structure than a binary table (especially a single binary table) for third-party tools to interpret.
+Stitching images from different HDUs into a coherent whole is probably a bit more likely for a third-party FITS viewer to support than images from different binary tables; it definitely is supported by some viewers in the absence of overlaps, if certain header cards are included.
+But a flat list of HDUs for all cells and image planes provides a lot less organizational structure than a binary table (especially a single binary table) for third-party tools to interpret.
 
 Each HDU comes with an extra 3-9 KB of overhead (1-2 header blocks, and padding out the full HDU size to a multiple of 2880 bytes) that cannot be compressed, which is not ideal, but probably not intolerable unless we get unexpectedly good compression ratios or shrink the cell size: an uncompressed 250×250 single-precision floating point image is 250KB, so those overheads should be at most 4% or so.
 The overheads would be significant for the PSF images, which we expect to be 25-40 pixels on a side (2.5-6 KB uncompressed).
