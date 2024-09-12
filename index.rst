@@ -131,8 +131,9 @@ This is a slight advantage over the data cube layout, but it seems to be the onl
 Stitched Images
 ---------------
 
-We expect most accesses to our coadd files to be uninterested in the redundant overlap pixel values - instead, most science users will be interested in stitching together the inner cells to form a mostly-seamless patch-level image.
+We expect many accesses to our coadd files to be uninterested in the redundant overlap pixel values - instead, many science users will be interested in stitching together the inner cells to form a mostly-seamless patch-level image.
 This suggests that we might want to store that stitched inner-cell image for each plane directly as a single HDU, and shunt the overlap pixel values to a different HDU.
+Aside from being actively problematic for visualization, the overlap regions are not needed for science analyses that either ignore the PSF or use it via forward modeling (they are important for methods that involve convolution or deconvolutions of the data).
 
 For the inner-cell image, this is ideal: FITS WCS can be used exactly the way it was intended, and third-party FITS viewers will be completely usable without any extra effort.
 
