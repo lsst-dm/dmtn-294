@@ -155,6 +155,19 @@ Assuming we don't care about FITS WCS support for the overlap regions, the main 
 
 This option is also neutral to the problem of compressed subimage reads against object stores.
 
+Dual-interpretation HDUs
+------------------------
+
+Tile-compressed FITS image HDUs are actually implemented as binary table HDUs with special columns and headers, and FITS libraries typically allow them to be read directly as binary tables as well as decompressed into images, even if the latter is generally the default.
+The FITS standard explicitly permits these binary tables to have additional columns (to be ignored when reading the HDU as a compressed image), which means we can actually combine the exploded image (or data cube) and binary table representations in a single HDU, with a couple of caveats:
+
+- we have to compress each cell independently (this is the most way to compress anyway), in order for the image tile-compression binary table form to have one row for each cell;
+- each image plane can only have one image HDU.
+
+This lets us associate WCS information and other metadata with each cell by adding table columns that correspond to standard FITS header values, at the cost of duplicating it for every plane (very little of the per-cell information we'd put in these columns would change from plane to plane).
+It's unlikely third-party FITS readers would fully interpret these columns without additional effort - they would most likely be ignored when treating the HDU as an image to be decompressed, while the ``COMPRESSED_DATA`` column would not be recognized as the image-like column expected by the Green Bank convention in the binary table form.
+Nevertheless, mixing two well-established interpretations of binary tables to together fully represent our data model is arguably better than inventing a new one.
+
 Hybrid Options
 --------------
 
