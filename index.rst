@@ -25,6 +25,8 @@ To account for chromatic PSF effects we may also store images that correspond to
 
 In addition, we'll need to store considerable structured metadata, including a WCS, information about the grid structure, coadded aperture corrections and wavelength-dependent throughput, the visit and detector IDs of the epochs that contributed to each cell, and additional information about the pixel uncertainty (some measure of typical covariance, and an approximately constant variance that either averages or does not include photon noise from sources).
 
+It is highly desirable that non-Rubin-specific third-party image viewers be able to understand the WCS, display coordinates for pixels indicated by users, and accurately overlay marks on the image at the locations of detected objects or other targets.
+
 We will assume throughout this note that we're writing FITS files: regardless of any other format Rubin might support, we have to support FITS as well, so it's just more work to do anything else.
 
 These files will be one per "patch", which we assume to be an approximately 4k × 4k image, divided into cells with an inner region that is approximately 150×150 with 50 pixel padding on all sides.
