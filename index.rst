@@ -163,6 +163,13 @@ The PSF images are the big exception: they are already intrinsically in their ow
 
 This makes binary table, exploded image, or data cube storage of PSFs quite attractive, even if other image planes are stored in other ways.
 
+Another attractive hybrid concept is storing the inner cell regions of one or more planes two times, in different ways:
+
+- as a stitched image with aggressively lossy compression, for visualization only;
+- along with the outer regions with less aggressively lossy or lossless compression in some format that is natural for third-party readers but not visualization (e.g. binary tables or exploded images).
+
+With sufficiently aggressive quantization, the visualization copy's storage cost may be negligible relative to the full copy.
+
 Metadata Layouts
 ================
 
