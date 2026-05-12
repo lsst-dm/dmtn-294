@@ -10,7 +10,12 @@ organization.ror = "https://ror.org/048g3cy84"
 license.id = "CC-BY-4.0"
 
 [technote.status]
-state = "draft"
+state = "deprecated"
+note = """\
+This technote describes various options for handling cell-based coadds with \
+overlap regions shared by multiple cells.  As of Data Preview 2, these \
+overlap regions are not believed to be necessary. \
+"""
 
 [[technote.authors]]
 name.given = "James F."
